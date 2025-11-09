@@ -4,6 +4,7 @@ import base64
 import time
 import socket
 import struct
+import numpy as np
 from voxel_sdk.device_controller import DeviceController
 from voxel_sdk.ble import BleVoxelTransport
 from inference_sdk import InferenceHTTPClient
