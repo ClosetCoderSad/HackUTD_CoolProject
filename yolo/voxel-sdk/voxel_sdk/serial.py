@@ -55,23 +55,55 @@ class SerialVoxelTransport(VoxelTransport):
         try:
             # Clear any pending input
             self.serial_connection.reset_input_buffer()
-            
+
             # Send command
             self.serial_connection.write(cmd_str.encode('utf-8'))
             self.serial_connection.flush()
-            
+
             # Small delay to ensure command is processed
-            time.sleep(0.1)
-            
-            # Read response
-            response = self.serial_connection.readline().decode('utf-8').strip()
-            
-            # Parse JSON response
-            try:
-                return json.loads(response)
-            except json.JSONDecodeError:
-                return {"error": "Invalid JSON response", "raw_response": response}
-                
+            time.sleep(0.05)
+
+            # Determine an adaptive timeout for commands that take longer (e.g., connectWifi)
+            timeout_seconds = self.timeout if self.timeout and self.timeout > 0 else 5.0
+            command_line = cmd_str.strip()
+            separator_index = command_line.find(":")
+            command_name = command_line if separator_index == -1 else command_line[:separator_index]
+            if command_name == "connectWifi":
+                # WiFi association may take many seconds; allow longer than default serial timeout
+                timeout_seconds = max(timeout_seconds, 35.0)
+
+            # Read lines until we find valid JSON or we hit the deadline
+            start = time.time()
+            deadline = start + timeout_seconds
+            last_partial = ""
+            while time.time() < deadline:
+                try:
+                    # Read a single line if available (non-blocking behavior controlled by serial timeout)
+                    line = self.serial_connection.readline().decode('utf-8', errors='ignore').strip()
+                except Exception:
+                    line = ""
+
+                if not line:
+                    # No data right now; small sleep and retry
+                    time.sleep(0.05)
+                    continue
+
+                last_partial = line
+
+                # Try to parse this line as JSON
+                try:
+                    return json.loads(line)
+                except json.JSONDecodeError:
+                    # Not JSON - it may be a progress/status line (e.g. "[WiFi] Attempting...")
+                    # Continue waiting for the real JSON response until timeout
+                    # But keep a short backoff to avoid busy-looping.
+                    time.sleep(0.05)
+                    continue
+
+            # If we timed out, return partial data for diagnosis
+            partial = last_partial or ""
+            return {"error": f"Timeout waiting for JSON response (waited {timeout_seconds}s)", "partial": partial}
+
         except serial.SerialException as e:
             return {"error": f"Serial communication error: {e}"}
     
