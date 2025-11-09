@@ -2,6 +2,7 @@
 import cv2
 import base64
 import time
+import socket
 from voxel_sdk.device_controller import DeviceController
 from voxel_sdk.ble import BleVoxelTransport
 from inference_sdk import InferenceHTTPClient
