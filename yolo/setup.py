@@ -30,7 +30,7 @@ if __name__ == '__main__':
         choices=['car_damage_yolo11m', 'general', 'wall_quality_api'],
         help="The detection mode to use. 'wall_quality_api' uses the Roboflow hosted API."
     )
-    parser.add_argument('--port', type=int, default=5000, help="Port to run the API server on.")
+    parser.add_argument('--port', type=int, default=5002, help="Port to run the API server on.")
     args = parser.parse_args()
 
     model = None
