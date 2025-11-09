@@ -4,7 +4,7 @@ import base64
 import time
 from voxel_sdk.device_controller import DeviceController
 from voxel_sdk.ble import BleVoxelTransport
-
+from inference_sdk import InferenceHTTPClient
 # Import from our other project files
 from shared_state import detection_data, latest_annotated_frame, lock
 from utils import _recv_exact, get_local_ip
@@ -61,24 +61,50 @@ def receive_frame(conn):
     return cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_COLOR)
 
 
-def process_frame_and_update_state(frame, model):
+def process_frame_and_update_state(frame, mode, model=None, api_client=None):
     """
-    Runs the model, processes the results, updates global API data,
-    and updates the global annotated frame for the live feed.
+    Processes a single frame using either a local model or the Roboflow API,
+    and updates the shared global state.
     """
     global detection_data, latest_annotated_frame
 
-    # Run tracking inference
-    results = model.track(frame, persist=True, verbose=False) 
-    result = results[0]
-    
-    # Generate the annotated frame for the live display
-    annotated_frame = result.plot()
-    
-    # Lock the global state while we modify it
-    with lock:
-        # Update the frame for the live feed
-        latest_annotated_frame = annotated_frame.copy()
+    # --- DYNAMIC INFERENCE LOGIC ---
+    if mode == 'wall_quality_api':
+        # --- API PATH ---
+        # Encode frame to JPEG in memory for the API call
+        _, img_encoded = cv2.imencode(".jpg", frame)
+        
+        # Get predictions from Roboflow
+        result = api_client.infer(img_encoded, model_id="wall-quality-detection/1")
+        predictions = result.get('predictions', [])
+
+        # Since the API doesn't support tracking, we generate a simple count/confidence summary
+        aggregator = defaultdict(lambda: [0.0, 0])
+        for p in predictions:
+            aggregator[p['class']][0] += p['confidence']
+            aggregator[p['class']][1] += 1
+
+        final_detections_summary = {}
+        for class_name, (conf_sum, count) in aggregator.items():
+            final_detections_summary[class_name] = {
+                "count": count, "average_confidence": conf_sum / count
+            }
+        
+        # NOTE: Cannot provide a useful annotated frame without bounding boxes
+        annotated_frame = frame 
+        with lock:
+            latest_annotated_frame = annotated_frame.copy()
+            # Overwrite the global state with the simple summary
+            detection_data = {"status": "success", "detections": final_detections_summary}
+
+    else:
+        # --- LOCAL MODEL TRACKING PATH ---
+        results = model.track(frame, persist=True, verbose=False) 
+        result = results[0]
+        annotated_frame = result.plot()
+
+        with lock:
+            latest_annotated_frame = annotated_frame.copy()
 
         # Check if the tracker found any objects
         if result.boxes.id is not None:
@@ -119,24 +145,33 @@ def process_frame_and_update_state(frame, model):
 
 
 
-def video_processing_thread(model, device_name="voxel", stream_port=9000):
+def video_processing_thread(mode, model=None, device_name="voxel", stream_port=9000):
     """
-    High-level orchestrator for the video processing pipeline.
-    Connects, loops through frames, processes them, and cleans up.
+    High-level orchestrator. Now initializes the Roboflow client if needed.
     """
     global detection_data
     transport, fs, conn = None, None, None
+    api_client = None
+
+    # --- MODIFICATION: Initialize Roboflow Client for API mode ---
+    if mode == 'wall_quality_api':
+        print("Background thread: Initializing Roboflow API client...")
+        api_client = InferenceHTTPClient(
+            api_url="https://serverless.roboflow.com",
+            # !!! IMPORTANT: Replace with YOUR private API key from Roboflow !!!
+            api_key="9i6G8SnX8usNN9yNSJZv" 
+        )
+        print("Background thread: Roboflow client initialized.")
 
     try:
         transport, fs, conn = setup_stream_connection(device_name, stream_port)
-        
         while True:
             frame = receive_frame(conn)
             if frame is None:
-                print("Background thread: Stream ended.")
-                break
+                print("Background thread: Stream ended."); break
             
-            process_frame_and_update_state(frame, model)
+            # Pass the mode, model, and client to the processing function
+            process_frame_and_update_state(frame, mode, model=model, api_client=api_client)
 
     except Exception as e:
         print(f"An error occurred in the background thread: {e}")

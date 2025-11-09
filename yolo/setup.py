@@ -23,23 +23,42 @@ def get_detections():
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Run a YOLO backend server with tracking and a live feed.")
-    parser.add_argument('--mode', type=str, default='wall_quality', choices=['wall_quality', 'car_damage_yolo11m', 'general'], help="The detection mode to use.")
-    parser.add_argument('--port', type=int, default=5002, help="Port to run the API server on.")
+    parser = argparse.ArgumentParser(description="Run a YOLO backend server.")
+    # --- MODIFICATION: Add the new 'wall_quality_api' mode ---
+    parser.add_argument(
+        '--mode', type=str, default='wall_quality', 
+        choices=['wall_quality', 'car_damage_yolo11m', 'general', 'wall_quality_api'],
+        help="The detection mode to use. 'wall_quality_api' uses the Roboflow hosted API."
+    )
+    parser.add_argument('--port', type=int, default=5000, help="Port to run the API server on.")
     args = parser.parse_args()
 
-    MODEL_MAP = {'general': 'yolov8n.pt', 'wall_quality': 'wall_quality.pt', 'car_damage_yolo11m': 'yolo11m_car_damage.pt'}
-    selected_model_file = MODEL_MAP[args.mode]
-    print(f"Main thread: Loading model for '{args.mode}' mode from '{selected_model_file}'...")
-    try: model = YOLO(selected_model_file); print("Main thread: Model loaded successfully.")
-    except FileNotFoundError: print(f"ERROR: Model file '{selected_model_file}' not found."); exit()
+    # --- MODIFICATION: Conditionally load the model ---
+    model = None
+    if args.mode != 'wall_quality_api':
+        MODEL_MAP = {
+            'general': 'yolov8n.pt',
+            'wall_quality': 'wall_quality.pt',
+            'car_damage_yolo11m': 'yolo11m_car_damage.pt'
+        }
+        selected_model_file = MODEL_MAP[args.mode]
+        print(f"Main thread: Loading local model for '{args.mode}' mode from '{selected_model_file}'...")
+        try:
+            model = YOLO(selected_model_file)
+            print("Main thread: Model loaded successfully.")
+        except FileNotFoundError:
+            print(f"ERROR: Model file '{selected_model_file}' not found.")
+            exit()
+    else:
+        print(f"Main thread: Running in '{args.mode}' mode. No local model will be loaded.")
 
-    processing_thread = threading.Thread(target=video_processing_thread, args=(model,), daemon=True)
+    # --- Start Background Threads ---
+    # --- MODIFICATION: Pass the 'mode' to the processing thread ---
+    processing_thread = threading.Thread(target=video_processing_thread, args=(args.mode, model), daemon=True)
     processing_thread.start()
 
     flask_thread = threading.Thread(target=lambda: app.run(host='0.0.0.0', port=args.port), daemon=True)
     flask_thread.start()
-
     print(f"Main thread: Starting Flask server in background on http://0.0.0.0:{args.port}")
     # The 'lambda' is used to run app.run in a simple, argument-less function for the thread
     
