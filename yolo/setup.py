@@ -69,7 +69,7 @@ if __name__ == '__main__':
             cv2.imshow("Live Feed", frame_to_show)
 
         # Check for 'q' key press to exit the loop
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        if cv2.waitKey(10) & 0xFF == ord('q'):
             print("Main thread: 'q' pressed, shutting down.")
             break
             
