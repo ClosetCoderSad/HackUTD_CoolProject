@@ -30,7 +30,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run a YOLO backend server.")
     parser.add_argument(
         '--mode', type=str, default='general', 
-        choices=['car_damage_yolo11m', 'general'],
+        choices=['car_damage_yolo11m', 'general', 'wall_quality'],
         help="The detection mode to use. 'car_damage_yolo11m' uses the local YOLO model."
     )
     parser.add_argument('--port', type=int, default=5002, help="Port to run the API server on.")
@@ -39,7 +39,8 @@ if __name__ == '__main__':
     # Always use local model processing
     MODEL_MAP = {
         'general': 'yolov8n.pt',
-        'car_damage_yolo11m': 'yolo11m_car_damage.pt'
+        'car_damage_yolo11m': 'yolo11m_car_damage.pt',
+        'wall_quality': 'wall_quality_detector.pt'
     }
     selected_model_file = MODEL_MAP[args.mode]
     print(f"Main thread: Loading local model for '{args.mode}' mode from '{selected_model_file}'...")
