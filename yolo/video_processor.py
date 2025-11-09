@@ -18,6 +18,8 @@ def setup_stream_connection(device_name="voxel", stream_port=9000):
     print("Helper: Connecting to Voxel device...")
     transport = BleVoxelTransport(device_name=device_name)
     transport.connect("")
+    
+    controller = DeviceController(transport)
     fs = controller.filesystem = DeviceController(transport).filesystem
     print("Helper: Connected.")
 
